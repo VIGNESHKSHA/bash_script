@@ -1,0 +1,135 @@
+#!/bin/bash
+
+
+#color logger
+info()    { echo -e "\033[0;34m$*\033[0m"; }
+success() { echo -e "\033[0;32m$*\033[0m"; }
+error()   { echo -e "\033[0;31m$*\033[0m"; }
+warn()   { echo -e "\033[0;33m$*\033[0m"; }
+bold()   { echo -e "\033[1m$*\033[0m"; }
+
+info "Git + Npm + VS Code automation"
+
+#function: clone repo
+clone_repo() {
+
+	local REPO_URL
+	DIR_NAME="$1"
+	read -p "Enter repository URL or git clone command: " INPUT
+	
+	#echo "${INPUT}"
+	[[ -z "${INPUT}" ]] && { error "Error: repo URL required"; exit 1; }
+	#Capture Repo url
+	if [[ "$INPUT" == git\ clone\ * ]]; then
+		REPO_URL=${INPUT#git clone }
+	else
+		REPO_URL="$INPUT"
+	fi
+	echo "Entered URL: "$(success "${REPO_URL}")
+	echo "Entered DirName: "$(success "${DIR_NAME}")
+
+	#if directory exist delete it<dev purpose>
+	if [[ -d "$DIR_NAME" ]]; then
+		read -p "Directory '$DIR_NAME' already exists. Do you want to delete it? (y/N): " answer
+		answer="${answer,,}"
+		if [[ "$answer" == "y" || "$answer" == "yes" ]]; then
+        		warn "Deleting '$DIR_NAME'..."
+        		rm -rf "$DIR_NAME"
+    		else
+        		warn "Directory not deleted. Exiting."
+        		exit 1
+    		fi
+		#echo "Directory '$DIR_NAME' already exists. Removing it........"
+		#rm -rf "$DIR_NAME"
+	fi
+
+	#clone git into the folder
+	git clone "$REPO_URL" "$DIR_NAME" || { error "Clone failed"; exit 1; }
+    	success "✅ Repo cloned into $DIR_NAME"
+
+}
+
+select_branch() {
+	# Get all remote branches, clean up extra spaces and HEAD pointer
+	mapfile -t BRANCHES < <(
+  		git -C "$DIR_NAME" branch -r |            # list remote branches
+  		sed 's/^[[:space:]]*origin\///' |        # remove leading spaces and 'origin/'
+  		grep -v 'HEAD ->'                         # remove HEAD pointer
+	)
+
+	# Print array to verify
+	# printf '%s\n' "${BRANCHES[@]}"
+	info "Select a branch to checkout:"
+
+	select BRANCH_NAME in "${BRANCHES[@]}"; do
+    		if [[ -n "$BRANCH_NAME" ]]; then
+        		"You selected: " success "$BRANCH_NAME"
+        		git -C "$DIR_NAME" branch -t "$BRANCH_NAME" "origin/$BRANCH_NAME"
+			git -C "$DIR_NAME" checkout "$BRANCH_NAME"
+			git -C "$DIR_NAME" branch -vv
+        		break
+    		else
+        		warn "Invalid option. Try again."
+    		fi
+	done
+
+
+}
+
+usage() {
+cat <<EOF
+
+Usage:
+   gitdev -d <directory>
+   gitdev --dir <directory>
+
+Description:
+   Automates repo setup.
+       -creates directory
+       -clones repository
+       -checkout branch and track the remote branch
+       -opens VS code
+EOF
+}
+open_vscode() {
+	local vs_answer
+	read -p "Do you want to open vs code? (y/N): " vs_answer
+	vs_answer="${vs_answer,,}"
+	if [[ "$vs_answer" == "y" || "$vs_answer" == "yes" ]]; then
+		info "opening the vs code ...."
+		code "$DIR_NAME"
+	else
+		exit 1
+	fi
+ 
+}
+
+[[ $# -eq 0 ]] && { usage; exit 0; }
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-d|--dir)
+			[[ -z "$2" || "$2" == -* ]] && { error "Error: $1 requires a value"; exit 1; }
+			DIR="$2"
+			#mkdir ${dir} && echo"${dir} is successfully created"
+			shift 2
+			;;
+		-h|--help)
+			usage
+			exit 0
+			;;
+		*)
+			warn "Invalid answer"
+			exit 1
+			;;
+	esac
+done
+
+
+#Execute Flow
+clone_repo "${DIR}"
+select_branch
+#run_npm
+open_vscode
+
+
+
